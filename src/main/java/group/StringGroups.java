@@ -17,7 +17,15 @@ import java.util.regex.Pattern;
 
 public class StringGroups {
 
-	private static final Pattern LINE_PATTERN = Pattern.compile("(\"\\d*\";)*\"\\d*\"");
+	private static final Pattern LINE_PATTERN = Pattern.compile("((\"(\\d+(\\.\\d+)?)?\")?;)*(\"(\\d+(\\.\\d+)?)?\")?");
+	private static final String EMPTY_STRING = "";
+	private static final String QUOTES_EMPTY_STRING = "\"\"";
+
+	private static List<List<String>> megaList;
+	private static int maxCount;
+	private static List<Map<String, List<Integer>>> mmList;
+	private static List<Set<String>> usedKeysList;
+	private static Set<Integer> currentSet;
 
 	public static void main(String[] args) {
 		long startTime = System.currentTimeMillis();
@@ -29,6 +37,7 @@ public class StringGroups {
 
 		String path2InputFile = args[0];
 		String path2OutputFile = args[1];
+
 		Set<String> set = new HashSet<String>();
 		try {
 			FileReader fr = new FileReader(path2InputFile);
@@ -47,14 +56,36 @@ public class StringGroups {
 			e.printStackTrace();
 		}
 
-		List<List<Long>> megaList = new ArrayList<List<Long>>(set.size());
+		megaList = new ArrayList<List<String>>(set.size());
 		String[] parts = null;
-		int maxCount = 0;
+		maxCount = 0;
 		for (String line : set) {
-			parts = line.split(";");
-			List<Long> values = new ArrayList<Long>(parts.length);
-			for (String part : parts) {
-				values.add(part.length() <= 2 ? null : Long.parseLong(part.substring(1, part.length() - 1)));
+			int count = 0;
+			int i = 0;
+			for (i = line.length() - 1; i >= 0; --i) {
+				char c = line.charAt(i);
+				if (c == ';') {
+					++count;
+				} else {
+					break;
+				}
+			}
+			List<String> values = null;
+			if (i < 0) {
+				++count;
+				values = new ArrayList<String>(count);
+				for (i = 0; i < count; ++i) {
+					values.add(EMPTY_STRING);
+				}
+			} else {
+				parts = line.split(";");
+				values = new ArrayList<String>(parts.length + count);
+				for (String part : parts) {
+					values.add(part.isEmpty() ? EMPTY_STRING : (part.length() <= 2 ? QUOTES_EMPTY_STRING : part));
+				}
+				for (i = 0; i < count; ++i) {
+					values.add(EMPTY_STRING);
+				}
 			}
 			megaList.add(values);
 			if (values.size() > maxCount) {
@@ -64,18 +95,18 @@ public class StringGroups {
 		set = null;
 		parts = null;
 
-		List<Map<Long, List<Integer>>> mmList = new ArrayList<Map<Long, List<Integer>>>(maxCount);
+		mmList = new ArrayList<Map<String, List<Integer>>>(maxCount);
 		for (int i = 0; i < maxCount; ++i) {
-			mmList.add(new HashMap<Long, List<Integer>>(80000));
+			mmList.add(new HashMap<String, List<Integer>>(80000));
 		}
 		for (int j = 0; j < megaList.size(); ++j) {
-			List<Long> values = megaList.get(j);
+			List<String> values = megaList.get(j);
 			for (int i = 0; i < values.size(); ++i) {
-				Long value = values.get(i);
-				if (value == null) {
+				String value = values.get(i);
+				if (value == EMPTY_STRING || value == QUOTES_EMPTY_STRING) {
 					continue;
 				}
-				Map<Long, List<Integer>> mapOne = mmList.get(i);
+				Map<String, List<Integer>> mapOne = mmList.get(i);
 				List<Integer> setOne = mapOne.get(value);
 				if (setOne == null) {
 					setOne = new LinkedList<Integer>();
@@ -87,39 +118,33 @@ public class StringGroups {
 			}
 		}
 
-		List<Set<Integer>> allGroups = new ArrayList<Set<Integer>>();
-		List<Set<Integer>> curGroups = new ArrayList<Set<Integer>>();
+		usedKeysList = new ArrayList<Set<String>>(maxCount);
 		for (int i = 0; i < maxCount; ++i) {
-			Map<Long, List<Integer>> mapOne = mmList.get(i);
-			for (Map.Entry<Long, List<Integer>> entry : mapOne.entrySet()) {
-				if (entry.getValue().size() <= 1) {
+			usedKeysList.add(new HashSet<String>());
+		}
+		currentSet = new HashSet<Integer>();
+		List<Set<Integer>> allGroups = new ArrayList<Set<Integer>>();
+		for (int i = 0; i < maxCount; ++i) {
+			Map<String, List<Integer>> mapOne = mmList.get(i);
+			Set<String> usedKeysSet = usedKeysList.get(i);
+			for (Map.Entry<String, List<Integer>> entry : mapOne.entrySet()) {
+				if (usedKeysSet.contains(entry.getKey())) {
 					continue;
 				}
-				List<Integer> matchedIndexes = new ArrayList<Integer>();
-				for (int j = 0; j < allGroups.size(); ++j) {
-					Set<Integer> setOld = allGroups.get(j);
-					if (isIntersec(setOld, entry.getValue())) {
-						matchedIndexes.add(j);
-					}
+				List<Integer> currentList = entry.getValue();
+				if (currentList.size() <= 1) {
+					continue;
 				}
-				if (matchedIndexes.isEmpty()) {
-					Set<Integer> curSet = new HashSet<Integer>();
-					curSet.addAll(entry.getValue());
-					curGroups.add(curSet);
-				} else {
-					Set<Integer> mainSetOld = allGroups.get(matchedIndexes.get(0));
-					mainSetOld.addAll(entry.getValue());
-					for (int j = matchedIndexes.size() - 1; j > 0; --j) {
-						mainSetOld.addAll(allGroups.get(matchedIndexes.get(j)));
-						allGroups.remove(matchedIndexes.get(j).intValue());
-					}
-				}
+				currentSet.addAll(currentList);
+				usedKeysSet.add(entry.getKey());
+				recursiveSearch(currentList, i);
+				allGroups.add(currentSet);
+				currentSet = new HashSet<Integer>();
 			}
-			allGroups.addAll(curGroups);
-			curGroups = new ArrayList<Set<Integer>>();
 		}
 		mmList = null;
-		curGroups = null;
+		usedKeysList = null;
+		currentSet = null;
 
 		Collections.sort(allGroups, (a, b) -> b.size() - a.size());
 
@@ -132,7 +157,7 @@ public class StringGroups {
 				fw.write("\n\nГруппа " + (i + 1));
 				for (Integer index : setOne) {
 					usedSet.add(index);
-					List<Long> oneList = megaList.get(index);
+					List<String> oneList = megaList.get(index);
 					fw.write(buildOneGroupString(oneList));
 				}
 			}
@@ -143,7 +168,7 @@ public class StringGroups {
 					continue;
 				}
 				fw.write("\n\nГруппа " + index);
-				List<Long> oneList = megaList.get(i);
+				List<String> oneList = megaList.get(i);
 				fw.write(buildOneGroupString(oneList));
 				++index;
 			}
@@ -151,33 +176,52 @@ public class StringGroups {
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
-
 		System.out.println("All Time=" + (System.currentTimeMillis() - startTime) + " ms");
 	}
 
-	private static String buildOneGroupString(List<Long> oneList) {
+	private static void recursiveSearch(List<Integer> currentList, int wrongIndex) {
+		for (int i = 0; i < maxCount; ++i) {
+			if (i == wrongIndex) {
+				continue;
+			}
+			List<String> keys = new LinkedList<String>();
+			for (Integer index : currentList) {
+				List<String> values = megaList.get(index);
+				String value = i < values.size() ? values.get(i) : EMPTY_STRING;
+				if (value == EMPTY_STRING || value == QUOTES_EMPTY_STRING) {
+					continue;
+				}
+				keys.add(value);
+			}
+			if (keys.isEmpty()) {
+				continue;
+			}
+			Map<String, List<Integer>> mapOne = mmList.get(i);
+			Set<String> usedKeysSet = usedKeysList.get(i);
+			for (String key : keys) {
+				if (usedKeysSet.contains(key)) {
+					continue;
+				}
+				List<Integer> values = mapOne.get(key);
+				if (values == null || values.size() <= 1) {
+					continue;
+				}
+				usedKeysSet.add(key);
+				currentSet.addAll(values);
+				recursiveSearch(values, i);
+			}
+		}
+	}
+
+	private static String buildOneGroupString(List<String> oneList) {
 		StringBuilder builder = new StringBuilder();
 		builder.append('\n');
 		for (int j = 0; j < oneList.size(); ++j) {
 			if (j > 0) {
 				builder.append(';');
 			}
-			Long value = oneList.get(j);
-			if (value == null) {
-				builder.append("\"\"");
-			} else {
-				builder.append('\"').append(value).append('\"');
-			}
+			builder.append(oneList.get(j));
 		}
 		return builder.toString();
-	}
-
-	private static boolean isIntersec(Set<Integer> set, List<Integer> list) {
-		for (Integer v : list) {
-			if (set.contains(v)) {
-				return true;
-			}
-		}
-		return false;
 	}
 }
